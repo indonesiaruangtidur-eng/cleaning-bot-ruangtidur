@@ -1,5 +1,8 @@
 import os
 import json
+import logging
+from datetime import datetime
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,14 +12,16 @@ from telegram.ext import (
     ContextTypes,
     filters,
 )
+
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
-from datetime import datetime
+
+
+# ===== BASIC CONFIG =====
+logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
 SHEET_NAME = os.getenv("SHEET_NAME")
-
-logging.basicConfig(level=logging.INFO)
 
 # ===== GOOGLE SHEET SETUP =====
 scope = [
@@ -24,15 +29,13 @@ scope = [
     "https://www.googleapis.com/auth/drive",
 ]
 
-import json
-
 creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
 creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
-)
 client = gspread.authorize(creds)
 sheet = client.open(SHEET_NAME).sheet1
 
+# ===== HOTEL LIST =====
 HOTELS = [
     "Sans Hotel Cibanteng",
     "Bubulak Inn",
@@ -68,11 +71,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["room"] = update.message.text
         context.user_data["step"] = "photo"
         await update.message.reply_text("Kirim Foto Area:")
-    
+
     elif step == "photo" and update.message.photo:
         file = await update.message.photo[-1].get_file()
-        file_path = f"photos/{file.file_id}.jpg"
-        os.makedirs("photos", exist_ok=True)
+        file_path = f"/tmp/{file.file_id}.jpg"
         await file.download_to_drive(file_path)
 
         # SAVE TO SHEET
