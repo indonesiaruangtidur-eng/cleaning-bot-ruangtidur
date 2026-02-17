@@ -16,26 +16,45 @@ from telegram.ext import (
 import gspread
 from oauth2client.service_account import ServiceAccountCredentials
 
-
-# ===== BASIC CONFIG =====
-logging.basicConfig(level=logging.INFO)
+# ===== 1. CONFIGURATION & LOGGING =====
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")
 SHEET_NAME = os.getenv("SHEET_NAME")
+GOOGLE_CREDS_RAW = os.getenv("GOOGLE_CREDENTIALS")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# ===== GOOGLE SHEET SETUP =====
-scope = [
-    "https://spreadsheets.google.com/feeds",
-    "https://www.googleapis.com/auth/drive",
-]
+# ===== 2. GOOGLE SHEET AUTHENTICATION =====
+def service_account_login():
+    scope = [
+        "https://spreadsheets.google.com/feeds",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    
+    if not GOOGLE_CREDS_RAW:
+        logger.error("ERROR: GOOGLE_CREDENTIALS environment variable is missing!")
+        return None
 
-creds_dict = json.loads(os.getenv("GOOGLE_CREDENTIALS"))
-creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+    try:
+        # Mengubah string JSON dari environment variable menjadi dictionary
+        creds_dict = json.loads(GOOGLE_CREDS_RAW)
+        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
+        client = gspread.authorize(creds)
+        return client.open(SHEET_NAME).sheet1
+    except json.JSONDecodeError as e:
+        logger.error(f"ERROR: Google Credentials JSON is invalid: {e}")
+    except Exception as e:
+        logger.error(f"ERROR: Failed to connect to Google Sheets: {e}")
+    return None
 
-client = gspread.authorize(creds)
-sheet = client.open(SHEET_NAME).sheet1
+# Inisialisasi Sheet
+sheet = service_account_login()
 
-# ===== HOTEL LIST =====
+# ===== 3. HOTEL LIST =====
 HOTELS = [
     "Sans Hotel Cibanteng",
     "Bubulak Inn",
@@ -44,16 +63,17 @@ HOTELS = [
     "D'Palma Guest House",
 ]
 
-# ===== START =====
+# ===== 4. BOT HANDLERS =====
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton(h, callback_data=h)] for h in HOTELS]
     await update.message.reply_text(
-        "🏨 Pilih Hotel:",
+        "🏨 *Sistem Laporan Hotel*\n\nSilakan pilih hotel:",
         reply_markup=InlineKeyboardMarkup(keyboard),
+        parse_mode="Markdown"
     )
     context.user_data.clear()
 
-# ===== HOTEL SELECT =====
 async def hotel_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -61,43 +81,28 @@ async def hotel_selected(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["hotel"] = query.data
     context.user_data["step"] = "room"
 
-    await query.message.reply_text("Masukkan Nomor Kamar / Area:")
+    await query.message.reply_text(f"✅ Hotel: {query.data}\n\nMasukkan *Nomor Kamar / Area*:", parse_mode="Markdown")
 
-# ===== MESSAGE HANDLER =====
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     step = context.user_data.get("step")
 
+    # Step 1: Input Room/Area
     if step == "room":
         context.user_data["room"] = update.message.text
         context.user_data["step"] = "photo"
-        await update.message.reply_text("Kirim Foto Area:")
+        await update.message.reply_text("📸 Sekarang, silakan *Kirim Foto Area*:", parse_mode="Markdown")
 
+    # Step 2: Receive Photo & Save to Sheet
     elif step == "photo" and update.message.photo:
-        file = await update.message.photo[-1].get_file()
-        file_path = f"/tmp/{file.file_id}.jpg"
-        await file.download_to_drive(file_path)
+        if not sheet:
+            await update.message.reply_text("❌ Terjadi kesalahan sistem (Sheet tidak terhubung).")
+            return
 
-        # SAVE TO SHEET
-        sheet.append_row([
-            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            context.user_data["hotel"],
-            context.user_data["room"],
-            file_path,
-            update.message.from_user.first_name
-        ])
+        # Ambil foto dengan resolusi tertinggi
+        photo_file = await update.message.photo[-1].get_file()
+        # Catatan: Ini hanya menyimpan File ID Telegram, bukan URL permanen.
+        photo_id = photo_file.file_id 
 
-        await update.message.reply_text("✅ Laporan tersimpan!")
-        context.user_data.clear()
-
-# ===== MAIN =====
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(hotel_selected))
-app.add_handler(MessageHandler(filters.TEXT | filters.PHOTO, handle_message))
-
-app.run_webhook(
-    listen="0.0.0.0",
-    port=int(os.environ.get("PORT", 8000)),
-    webhook_url=os.getenv("WEBHOOK_URL"),
-)
+        try:
+            # SAVE TO SHEET
+            sheet.append_row(
