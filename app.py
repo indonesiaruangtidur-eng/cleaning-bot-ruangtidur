@@ -34,7 +34,6 @@ missing = []
 if not TOKEN: missing.append("BOT_TOKEN")
 if not SHEET_NAME: missing.append("SHEET_NAME")
 if not GOOGLE_CREDS_RAW: missing.append("GOOGLE_CREDENTIALS")
-if not WEBHOOK_URL: missing.append("WEBHOOK_URL")
 
 if missing:
     logger.error(f"STARTUP FAILED — Missing environment variables: {', '.join(missing)}")
