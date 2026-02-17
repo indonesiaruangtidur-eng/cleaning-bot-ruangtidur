@@ -203,9 +203,5 @@ if __name__ == "__main__":
 
     logger.info(f"Bot starting — Webhook: {WEBHOOK_URL} | Port: {PORT}")
 
-    app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=WEBHOOK_URL,
-        url_path=TOKEN,
-    )
+    logger.info("Bot starting via Polling...")
+app.run_polling()
