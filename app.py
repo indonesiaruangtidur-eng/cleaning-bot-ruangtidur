@@ -76,12 +76,19 @@ async def simpan_ke_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
+        # Resolve foto kamar jadi direct link
+        photo_room_link = "-"
         photo_room_id = context.user_data.get("photo_room", "-")
-        photo_bathroom_id = context.user_data.get("photo_bathroom", "-")
+        if photo_room_id != "-":
+            photo_room_file = await context.bot.get_file(photo_room_id)
+            photo_room_link = photo_room_file.file_path
 
-        # Buat link foto dari Telegram file_id
-        photo_room_link = f"https://api.telegram.org/bot{TOKEN}/getFile?file_id={photo_room_id}" if photo_room_id != "-" else "-"
-        photo_bathroom_link = f"https://api.telegram.org/bot{TOKEN}/getFile?file_id={photo_bathroom_id}" if photo_bathroom_id != "-" else "-"
+        # Resolve foto kamar mandi jadi direct link
+        photo_bathroom_link = "-"
+        photo_bathroom_id = context.user_data.get("photo_bathroom", "-")
+        if photo_bathroom_id != "-":
+            photo_bathroom_file = await context.bot.get_file(photo_bathroom_id)
+            photo_bathroom_link = photo_bathroom_file.file_path
 
         row_data = [
             datetime.now().strftime("%Y-%m-%d %H:%M:%S"),   # Timestamp
@@ -93,14 +100,11 @@ async def simpan_ke_sheet(update: Update, context: ContextTypes.DEFAULT_TYPE):
             update.message.from_user.first_name             # Staff
         ]
 
-        # Tambah ke baris paling bawah spreadsheet
         sheet.append_row(row_data)
-
         await update.message.reply_text(
             "✅ *Laporan berhasil tersimpan!*\n\nKetik /start untuk laporan baru.",
             parse_mode="Markdown"
         )
-        logger.info(f"Data tersimpan — Hotel: {context.user_data.get('hotel')} | Room: {context.user_data.get('room')} | Staff: {update.message.from_user.first_name}")
 
     except Exception as e:
         logger.error(f"Gagal simpan data: {e}")
